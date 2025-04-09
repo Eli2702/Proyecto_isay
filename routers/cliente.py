@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from app.database import SessionLocal
-from app.models.cliente import Cliente
-from app.schemas.cliente import ClienteCreate, ClienteOut, ClienteLogin  
+from database import SessionLocal
+from models.cliente import Cliente
+from schemas.cliente import ClienteCreate, ClienteOut, ClienteLogin  
 from passlib.context import CryptContext
 
 router = APIRouter()

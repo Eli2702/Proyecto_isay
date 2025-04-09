@@ -1,7 +1,7 @@
 from fastapi import APIRouter, File, UploadFile, Form, HTTPException, Depends
 from sqlalchemy.orm import Session
-from app.database import SessionLocal, get_db
-from app.models.producto import Comic
+from database import SessionLocal, get_db
+from models.producto import Comic
 from datetime import datetime
 from typing import Optional
 import shutil

@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer, String, Enum
-from app.database import Base
+from database import Base
 import enum
 
 class EstadoEnum(str, enum.Enum):

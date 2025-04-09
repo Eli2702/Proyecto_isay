@@ -4,6 +4,14 @@ from database import SessionLocal
 from models.cliente import Cliente
 from schemas.cliente import ClienteCreate, ClienteOut, ClienteLogin  
 from passlib.context import CryptContext
+from models.compra import Compra, ItemCompra  
+from typing import List
+from pydantic import BaseModel
+
+from datetime import datetime  
+from models.producto import Comic 
+from models.compra import Compra, ItemCompra  
+
 
 router = APIRouter()
 
@@ -55,3 +63,114 @@ def crear_cliente(cliente: ClienteCreate, db: Session = Depends(get_db)):
 @router.get("/", response_model=list[ClienteOut])
 def listar_clientes(db: Session = Depends(get_db)):
     return db.query(Cliente).all()
+
+
+
+
+
+class ItemPedido(BaseModel):
+    comic_id: int
+    cantidad: int
+
+class PedidoCreate(BaseModel):
+    items: List[ItemPedido]
+
+@router.post("/pedido")
+def crear_pedido(
+    pedido: PedidoCreate,
+    cliente_id: int,  
+    db: Session = Depends(get_db)
+):
+
+    cliente = db.query(Cliente).get(cliente_id)
+    if not cliente:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+
+
+    total = 0.0
+    detalles = []
+    
+    for item in pedido.items:
+        comic = db.query(Comic).get(item.comic_id)
+        if not comic:
+            raise HTTPException(status_code=404, detail=f"Cómic ID {item.comic_id} no existe")
+        
+        if comic.stock < item.cantidad:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Stock insuficiente para '{comic.nombre}'. Disponible: {comic.stock}"
+            )
+        
+     
+        precio = comic.precio_oferta if comic.precio_oferta else comic.precio
+        subtotal = precio * item.cantidad
+        total += subtotal
+        
+        detalles.append({
+            "comic_id": comic.id_comic,
+            "nombre": comic.nombre,
+            "cantidad": item.cantidad,
+            "precio_unitario": precio,
+            "subtotal": subtotal
+        })
+
+    return {
+        "cliente_id": cliente_id,
+        "cliente_nombre": cliente.nombre,
+        "items": detalles,
+        "total": total,
+        "mensaje": "Pedido válido. Usa /comprar para confirmar."
+    }
+
+@router.post("/comprar")
+def confirmar_compra(
+    pedido: PedidoCreate,
+    cliente_id: int,
+    db: Session = Depends(get_db)
+):
+    # Verificar cliente
+    cliente = db.query(Cliente).get(cliente_id)
+    if not cliente:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+
+    # Crear registro de compra
+    nueva_compra = Compra(
+        cliente_id=cliente_id,
+        fecha_compra=datetime.now(),  # ¡Ahora datetime está importado!
+        total=0.0,
+        estado="completada"
+    )
+    db.add(nueva_compra)
+    db.flush()
+
+    # Procesar items
+    total = 0.0
+    for item in pedido.items:
+        comic = db.query(Comic).get(item.comic_id)  # ¡Ahora Comic está importado!
+        if not comic or comic.stock < item.cantidad:
+            db.rollback()
+            raise HTTPException(
+                status_code=400,
+                detail=f"Error con el cómic ID {item.comic_id}"
+            )
+
+        precio = comic.precio_oferta if comic.precio_oferta else comic.precio
+        subtotal = precio * item.cantidad
+        total += subtotal
+
+        # Registrar item
+        db.add(ItemCompra(
+            compra_id=nueva_compra.id_compra,
+            producto_id=comic.id_producto,
+            cantidad=item.cantidad,
+            precio_unitario=precio,
+            subtotal=subtotal
+        ))
+
+        # Actualizar stock
+        comic.stock -= item.cantidad
+
+    nueva_compra.total = total
+    db.commit()
+
+    return {"mensaje": "Compra exitosa", "compra_id": nueva_compra.id_compra}
